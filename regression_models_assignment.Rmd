@@ -1,0 +1,117 @@
+---
+title: "Regression models assignment"
+author: "Jason Collins"
+date: 2 June 2017
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+#Preparation
+data(mtcars)
+mtcars$am[mtcars$am==0] <- "A"
+mtcars$am[mtcars$am==1] <- "M"
+mtcars$am <- as.factor(mtcars$am)
+mtcars$cyl <- as.factor(mtcars$cyl)
+mtcars$vs <- as.factor(mtcars$vs)
+mtcars$gear <- as.factor(mtcars$gear)
+mtcars$carb <- as.factor(mtcars$carb)
+```
+
+## Summary
+```{r, echo=FALSE}
+#Summary stats
+meanA <- mean(mtcars$mpg[mtcars$am=="A"])
+meanM <- mean(mtcars$mpg[mtcars$am=="M"])
+ttest1 <- t.test(mtcars$mpg[mtcars$am=="A"], mtcars$mpg[mtcars$am=="M"])
+```
+
+The mtcars dataset contains 11 variables on 32 cars, including mileage and transmission type. In this dataset, the automatic cars have lower mileage than the cars with manual transmissions, with a mean mileage per gallon of `r round(meanA, 2)` and `r round(meanM, 2)` respectively. However, this relationship is largely due to the correlation of the transmission type with other car features such as weight and horsepower. A model accounting for these features suggests that transmission type itself has no effect on mileage.
+
+## Data exploration
+
+The mtcars dataset comprises 32 observations across 11 variables. 
+
+On a raw comparison, there is a clear relationship between the the car transmission type and miles per gallon. This is reflected in the mean mileage, with cars with automatic transmission having a mean mileage per gallon of `r round(meanA, 2)` compared to the manual cars' mean mileage of `r round(meanM, 2)`. A t-test of the difference (`r round(meanA - meanM, 2)`) returns a p value of `r round(ttest1$p.value, 3)`, suggesting we reject the null hypothesis of equality.
+
+```{r, echo=FALSE, fig.width=4, fig.height=4}
+plot(mpg ~ am, data=mtcars, xlab = "Transmission")
+```
+
+However, a visual inspection of the relationship between the type of transmission and the other variables in the dataset (see Figure 1 in the Appendix) shows a range of other factors that could affect mileage are correlated with transmission type. This includes autmatic cars tending to be both heavier and have higher horsepower. The model will need to control for these factors.
+
+## Modelling
+
+Including all variables in the model will sacrifice too many degrees of freedom (there are only 32 observations), so we will select a first model based on a subset of variables likely to affect mpg - horsepower and weight - in addition to transmission type.
+
+$$ mpg = \beta_{0} + \beta_{1}am + \beta_{2}hp + \beta_{3}wt $$
+
+```{r, echo=FALSE}
+model1 <- lm(mpg ~ am + hp + wt, data=mtcars)
+round(summary(model1)$coef, 4)
+```
+
+A plot of the residuals (see Figure 2 in the Appendix) suggests that there is an omitted variable, with its shape suggesting a quadratic term. Trialing several variables suggests that a quadratic of weight may provide the most improvement to the model.
+
+$$ mpg = \beta_{0} + \beta_{1}am + \beta_{2}hp + \beta_{3}wt + \beta_{4}wt^{2}$$
+
+```{r, echo=FALSE}
+model2 <- lm(mpg ~ am + hp + wt + I(wt^2), data=mtcars)
+round(summary(model2)$coef, 4)
+```
+
+The residual plot for this second model (see Figure 3 in the Appendix) suggests no remaining pattern in the residuals.
+
+```{r, echo=FALSE, include=FALSE}
+anova1 <- anova(model1, model2)$`Pr(>F)`[2]
+```
+
+An F-test comparing the two models indicates that the addition of the quadratic variable results in an improved fit, with a probability of `r round(anova1, 4)`.
+
+This model suggests that mileage decreases with horespower and weight, although in the case of weight this occurs at a decreasing rate (the effect of the positive coefficient on the quadratic term). A 95% confidence interval for the coefficient on the manual transmission dummy is between `r round(confint(model2, "amM")[1], 2)` and `r round(confint(model2, "amM")[2], 2)`, which includes zero. Despite the positive coefficient on transmission, this effect of manual transmission is not significantly different from zero.
+
+Considering the other variables in the dataset, no model with an additional variable passes as F-test at the 5% significance level relative to the second model above. The following table shows the p-value for an F-test of a series of models with each remaining variable added to Model 2. None demonstrate a better fit.
+
+```{r, echo=FALSE}
+extraCoeff <- matrix(, nrow = 1, ncol = 0)
+for (i in c(2:3, 5, 7:8, 10:11)) {
+  model3 <- lm(mpg ~ am + hp + wt + I(wt^2) + mtcars[,i], data=mtcars)
+  anova2 <- anova(model2, model3)$`Pr(>F)`[2]
+  extraCoeff <- cbind(extraCoeff, round(anova2, 4))
+}
+
+extraCoeff <- data.frame(extraCoeff)
+colnames(extraCoeff) <- colnames(mtcars)[c(2:3, 5, 7:8, 10:11)]
+rownames(extraCoeff) <- "Pr(>F)"
+extraCoeff
+```
+
+## Appendix
+
+### Figure 1: Relationship between transmission type and other variables in dataset
+
+```{r, echo=FALSE, fig.height=8}
+par(mfrow=c(3,3), mar=c(3,2,2,2))
+for (i in c(2:8, 10:11)) {
+  plot(mtcars[,i] ~ mtcars$am, main=colnames(mtcars)[i])
+}
+```
+
+### Figure 2: Residual plot for model 1
+
+
+```{r, echo=FALSE}
+plot(predict(model1), resid(model1))
+lines(lowess(predict(model1), resid(model1)))
+```
+
+### Figure 3: Residual plot for model 2
+
+```{r, echo=FALSE}
+plot(predict(model2), resid(model2))
+lines(lowess(predict(model2), resid(model2)))
+```
+
